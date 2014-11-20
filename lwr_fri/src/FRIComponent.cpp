@@ -232,7 +232,7 @@ private:
           m_cmd_data.cmd.cmdFlags |= FRI_CMD_JNTSTIFF | FRI_CMD_JNTDAMP;
           for (unsigned int i = 0; i < LBR_MNJ; i++) {
             m_cmd_data.cmd.addJntTrq[i] = 0.0;
-            m_cmd_data.cmd.jntStiffness[i] = 0;
+            m_cmd_data.cmd.jntStiffness[i] = 2000.0;
             m_cmd_data.cmd.jntDamping[i] = 0.7;
           }
         }
