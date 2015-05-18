@@ -98,12 +98,14 @@ public:
     if (fri_create_socket() != 0)
       return false;
     // End of user code
+    std::cout << "FRI configured !" <<std::endl;
     return true;
   }
 
   bool startHook() {
     // Start of user code startHook
     // End of user code
+    std::cout << "FRI started !" <<std::endl;
     return true;
   }
 
@@ -113,9 +115,15 @@ public:
   }
 
   void updateHook() {
-    if( true) {
+    if( this->isRunning() ) {
       doComm();
     }
+  }
+  
+  void cleanupHook() {
+    std::cout << "FRI closing socket !" <<std::endl;
+    close(m_socket);
+    std::cout << "FRI cleaned up !" <<std::endl;
   }
 
 private:
@@ -161,12 +169,12 @@ private:
       cartPos.p.y(m_msr_data.data.msrCartPos[7]);
       cartPos.p.z(m_msr_data.data.msrCartPos[11]);
       cartPos = baseFrame * cartPos;
-      tf::PoseKDLToMsg(cartPos, cart_pos);
+      tf::poseKDLToMsg(cartPos, cart_pos);
 
       KDL::Twist v = KDL::diff(T_old, cartPos, m_msr_data.intf.desiredMsrSampleTime);
       v = cartPos.M.Inverse() * v;
       T_old = cartPos;
-      tf::TwistKDLToMsg(v, cart_twist);
+      tf::twistKDLToMsg(v, cart_twist);
 
       cart_wrench.force.x = m_msr_data.data.estExtTcpFT[0];
       cart_wrench.force.y = m_msr_data.data.estExtTcpFT[1];
@@ -404,12 +412,14 @@ private:
   std::string joint_names_prefix;
   uint16_t counter, fri_state_last;
   struct sockaddr_in m_remote_addr;
+  struct sockaddr_in local_addr;
   socklen_t m_sock_addr_len;
 
   tFriMsrData m_msr_data;
   tFriCmdData m_cmd_data;
 
   int fri_recv() {
+    m_sock_addr_len=sizeof(m_remote_addr);
     int n = rt_dev_recvfrom(m_socket, (void*) &m_msr_data, sizeof(m_msr_data),
         0, (sockaddr*) &m_remote_addr, &m_sock_addr_len);
     if (sizeof(tFriMsrData) != n) {
@@ -424,7 +434,7 @@ private:
     if (0
         > rt_dev_sendto(m_socket, (void*) &m_cmd_data, sizeof(m_cmd_data), 0,
             (sockaddr*) &m_remote_addr, m_sock_addr_len)) {
-      RTT::log(RTT::Error) << "Sending datagram failed."
+      RTT::log(RTT::Error) << "Sending datagram failed. to "<< inet_ntoa(m_remote_addr.sin_addr) <<" on port:"
           << ntohs(m_remote_addr.sin_port) << RTT::endlog();
       return -1;
     }
@@ -434,23 +444,23 @@ private:
   bool isPowerOn() { return m_msr_data.robot.power!=0; }
 
   int fri_create_socket() {
-
+    int so_reuseaddr = 1;
+    
     if (m_socket != 0)
       rt_dev_close(m_socket);
     m_socket = rt_dev_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    rt_dev_setsockopt(m_socket, SOL_SOCKET, SO_REUSEADDR, 0, 0);
+    rt_dev_setsockopt(m_socket, SOL_SOCKET, SO_REUSEADDR, &so_reuseaddr, sizeof(so_reuseaddr));
 
-    struct sockaddr_in local_addr;
+    
     bzero((char *) &local_addr, sizeof(local_addr));
     local_addr.sin_family = AF_INET;
-    local_addr.sin_addr.s_addr = INADDR_ANY;
+    local_addr.sin_addr.s_addr = htonl(INADDR_ANY); //inet_addr("127.0.0.1");
     local_addr.sin_port = htons(prop_fri_port);
-
-    if (rt_dev_bind(m_socket, (sockaddr*) &local_addr, sizeof(sockaddr_in)) < 0) {
+    if (rt_dev_bind(m_socket, (sockaddr*) &local_addr, sizeof(struct sockaddr_in)) < 0) {
       RTT::log(RTT::Error) << "Binding of port failed with errno " << errno << RTT::endlog();
       return -1;
     }
-
+        
     return 0;
   }
   // End of user code
