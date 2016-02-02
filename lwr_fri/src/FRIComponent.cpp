@@ -11,6 +11,7 @@
 
 #include <lwr_fri/CartesianImpedance.h>
 #include <lwr_fri/FriJointImpedance.h>
+#include <lwr_fri/FriKrlData.h>
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/Wrench.h>
 #include <geometry_msgs/Twist.h>
@@ -60,8 +61,9 @@ public:
     this->ports()->addPort("JointImpedanceCommand", port_JointImpedanceCommand).doc("");
     this->ports()->addPort("JointPositionCommand", port_JointPositionCommand).doc("");
     this->ports()->addPort("JointTorqueCommand", port_JointTorqueCommand).doc("");
-    this->ports()->addPort("KRL_CMD", port_KRL_CMD).doc("");
-
+    this->ports()->addPort("toKRL",port_ToKRL).doc("");
+    //this->ports()->addPort("KRL_CMD", port_KRL_CMD).doc("");
+    this->ports()->addPort("fromKRL",port_FromKRL).doc("");
     this->ports()->addPort("CartesianWrench", port_CartesianWrench).doc("");
     this->ports()->addPort("RobotState", port_RobotState).doc("");
     this->ports()->addPort("FRIState", port_FRIState).doc("");
@@ -201,7 +203,7 @@ private:
       m_cmd_data.head.sendSeqCount = ++counter;
       m_cmd_data.head.reflSeqCount = m_msr_data.head.sendSeqCount;
 
-      //Process KRL CMD
+      /*//Process KRL CMD
 
       if (!(m_msr_data.krl.boolData & (1 << 0))) {
         std_msgs::Int32 x;
@@ -211,8 +213,35 @@ private:
         }
       } else {
         m_cmd_data.krl.boolData &= ~(1 << 0);
+      }*/
+      
+      // process outgoing krl datagrams to the user
+      for(unsigned int i=0 ; i < FRI_USER_SIZE ; ++i)
+      {
+        m_fromKRL.intData[i] = m_msr_data.krl.intData[i];
+        m_fromKRL.realData[i] = m_msr_data.krl.realData[i];
       }
-
+      m_fromKRL.boolData = m_msr_data.krl.boolData;
+      
+      // process incoming krl datagrams from the user
+      // if no command flag
+      if (!(m_msr_data.krl.boolData & (1 << 0))) {
+        if (port_ToKRL.read(m_toKRL) == RTT::NewData) {
+          for(unsigned int i=0 ; i < FRI_USER_SIZE ; ++i)
+          {
+            m_cmd_data.krl.intData[i] = m_toKRL.intData[i];
+            m_cmd_data.krl.realData[i] = m_toKRL.realData[i];
+          }
+          // set command flag
+          m_cmd_data.krl.boolData |= (1 << 0);
+        }
+      } else {
+        // reset command flag
+        m_cmd_data.krl.boolData &= ~(1 << 0);
+      }
+      //for(unsigned i = 0;i< FRI_USER_SIZE ; ++i)
+      //    RTT::log(RTT::Debug) << " "<<i<<" : "<<m_cmd_data.krl.intData[i];
+      //RTT::log(RTT::Debug) << RTT::endlog();
       if (!isPowerOn()) {
         // necessary to write cmd if not powered on. See kuka FRI user manual p6 and friremote.cpp:
         for (int i = 0; i < LBR_MNJ; i++) {
@@ -362,7 +391,9 @@ private:
 
       port_Jacobian.write(jac_);
       port_MassMatrix.write(mass);
-
+        
+      port_FromKRL.write(m_fromKRL);
+      
       fri_send();
     }
 
@@ -377,8 +408,9 @@ private:
   RTT::InputPort<lwr_fri::FriJointImpedance > port_JointImpedanceCommand;
   RTT::InputPort<Eigen::VectorXd > port_JointPositionCommand;
   RTT::InputPort<Eigen::VectorXd > port_JointTorqueCommand;
-  RTT::InputPort<std_msgs::Int32 > port_KRL_CMD;
-
+  //RTT::InputPort<std_msgs::Int32 > port_KRL_CMD;
+  RTT::InputPort<lwr_fri::FriKrlData > port_ToKRL;
+  RTT::OutputPort<lwr_fri::FriKrlData > port_FromKRL;
   RTT::OutputPort<geometry_msgs::Wrench > port_CartesianWrench;
   RTT::OutputPort<tFriRobotState > port_RobotState;
   RTT::OutputPort<tFriIntfState > port_FRIState;
@@ -417,7 +449,9 @@ private:
 
   tFriMsrData m_msr_data;
   tFriCmdData m_cmd_data;
-
+  lwr_fri::FriKrlData m_fromKRL;
+  lwr_fri::FriKrlData m_toKRL;
+  
   int fri_recv() {
     m_sock_addr_len=sizeof(m_remote_addr);
     int n = rt_dev_recvfrom(m_socket, (void*) &m_msr_data, sizeof(m_msr_data),

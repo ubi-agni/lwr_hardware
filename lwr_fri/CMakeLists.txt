@@ -1,14 +1,14 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(lwr_fri)
 
-find_package(catkin REQUIRED COMPONENTS rtt_ros kuka_lwr_fri diagnostic_msgs geometry_msgs std_msgs message_generation kdl_conversions )
+find_package(catkin REQUIRED COMPONENTS rtt_ros rtt_roscomm kuka_lwr_fri diagnostic_msgs geometry_msgs std_msgs message_generation kdl_conversions )
 
 add_message_files(DIRECTORY msg)
 generate_messages(DEPENDENCIES geometry_msgs std_msgs)
 
 catkin_package(
   DEPENDS rtt
-  CATKIN_DEPENDS rtt_ros diagnostic_msgs geometry_msgs std_msgs message_runtime
+  CATKIN_DEPENDS rtt_ros rtt_roscomm diagnostic_msgs geometry_msgs std_msgs message_runtime
 )
 
 find_package(OROCOS-RTT REQUIRED)
@@ -46,6 +46,9 @@ if(${OROCOS_TARGET} STREQUAL "xenomai" )
   orocos_add_link_flags(fricomponent ${XENO_LDFLAGS})
   TARGET_LINK_LIBRARIES(fricomponent "-lrtdm")
 endif()
+
+
+ros_generate_rtt_typekit(lwr_fri)
 
 orocos_generate_package()
 
