@@ -31,6 +31,9 @@
 #include <fcntl.h>
 #include <arpa/inet.h>
 
+#include <time.h>
+#include <sys/time.h>
+
 #ifndef HAVE_RTNET
 
 #define rt_dev_socket socket
@@ -46,6 +49,22 @@
 
 typedef Eigen::Matrix<double, 7, 7> Matrix77d;
 // End of user code
+
+static size_t
+calc_time (struct timespec start, struct timespec stop)
+{
+  size_t ret;
+  if (start.tv_sec != stop.tv_sec)
+    {
+      ret = (1000000000 - start.tv_nsec) + stop.tv_nsec;
+    }
+  else
+    {
+      ret = stop.tv_nsec - start.tv_nsec;
+    }
+
+  return ret;
+}
 
 class FRIComponent : public RTT::TaskContext {
 public:
@@ -75,6 +94,9 @@ public:
     this->ports()->addPort("JointTorque", port_JointTorque).doc("");
     this->ports()->addPort("GravityTorque", port_GravityTorque);
     this->ports()->addPort("JointPosition", port_JointPosition).doc("");
+    
+    clock_gettime (CLOCK_REALTIME,&start_time);
+      
   }
 
   ~FRIComponent(){
@@ -96,6 +118,8 @@ public:
     port_JointTorque.setDataSample(jnt_trq_);
     port_GravityTorque.setDataSample(grav_trq_);
     port_Jacobian.setDataSample(jac_);
+    
+    nsecs_total=0;
 
     if (fri_create_socket() != 0)
       return false;
@@ -139,11 +163,25 @@ private:
     Matrix77d mass;
     lwr_fri::FriJointImpedance jnt_imp_cmd;
     lwr_fri::CartesianImpedance cart_imp_cmd;
-
+      if (counter % 1000 == 0)
+      {
+        
+        
+        fprintf (stderr,"%f ns (RT) or %f s for one processing iteration\n", nsecs_total/1000.0, nsecs_total/1e12);  
+        nsecs_total=0;
+        
+      }
+      
     //Read:
+    //start clock
+           
+    clock_gettime (CLOCK_REALTIME,&start_time);
     if (fri_recv() == 0) {
+      clock_gettime (CLOCK_REALTIME,&stop_time);
+      nanosecs_passed = calc_time (start_time,stop_time);
+      nsecs_total += nanosecs_passed; 
 
-      KDL::Frame baseFrame(
+      /*KDL::Frame baseFrame(
           KDL::Rotation::RPY(m_msr_data.krl.realData[3] * M_PI / 180.0,
               m_msr_data.krl.realData[4] * M_PI / 180.0,
               m_msr_data.krl.realData[5] * M_PI / 180.0),
@@ -196,7 +234,7 @@ private:
           mass(i, j) = m_msr_data.data.massMatrix[LBR_MNJ * i + j];
         }
       }
-
+*/
       //Fill in datagram to send:
       m_cmd_data.head.datagramId = FRI_DATAGRAM_ID_CMD;
       m_cmd_data.head.packetSize = sizeof(tFriCmdData);
@@ -216,6 +254,7 @@ private:
       }*/
       
       // process outgoing krl datagrams to the user
+      /*
       for(unsigned int i=0 ; i < FRI_USER_SIZE ; ++i)
       {
         m_fromKRL.intData[i] = m_msr_data.krl.intData[i];
@@ -239,6 +278,7 @@ private:
         // reset command flag
         m_cmd_data.krl.boolData &= ~(1 << 0);
       }
+      */
       //for(unsigned i = 0;i< FRI_USER_SIZE ; ++i)
       //    RTT::log(RTT::Debug) << " "<<i<<" : "<<m_cmd_data.krl.intData[i];
       //RTT::log(RTT::Debug) << RTT::endlog();
@@ -249,7 +289,7 @@ private:
               + m_msr_data.data.cmdJntPosFriOffset[i];
         }
       }
-      if (m_msr_data.intf.state == FRI_STATE_MON || !isPowerOn()) {
+      /*if (m_msr_data.intf.state == FRI_STATE_MON || !isPowerOn()) {
         // joint position control capable modes:
         if (m_msr_data.robot.control == FRI_CTRL_POSITION
             || m_msr_data.robot.control == FRI_CTRL_JNT_IMP) {
@@ -375,12 +415,12 @@ private:
           this->error();
         }
       }						//End command mode
-
+*/
       //Put robot and fri state on the ports(no parsing)
       port_RobotState.write(m_msr_data.robot);
       port_FRIState.write(m_msr_data.intf);
 
-      port_JointPosition.write(jnt_pos_);
+      /*port_JointPosition.write(jnt_pos_);
       port_JointVelocity.write(jnt_vel_);
       port_JointTorque.write(jnt_trq_);
       port_GravityTorque.write(grav_trq_);
@@ -391,16 +431,23 @@ private:
 
       port_Jacobian.write(jac_);
       port_MassMatrix.write(mass);
-        
-      port_FromKRL.write(m_fromKRL);
+        */
+      //port_FromKRL.write(m_fromKRL);
       
+      
+      //stop the clock
       fri_send();
+     
+      
     }
 
     this->trigger();
     // End of user code
   }
 
+  struct timespec start_time,stop_time;
+  size_t nanosecs_passed;
+  long long int nsecs_total;
 
   RTT::InputPort<lwr_fri::CartesianImpedance > port_CartesianImpedanceCommand;
   RTT::InputPort<geometry_msgs::Wrench > port_CartesianWrenchCommand;
