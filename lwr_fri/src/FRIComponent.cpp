@@ -289,6 +289,10 @@ private:
             m_cmd_data.cmd.cartDamping[i + FRI_CART_VEC / 2] = 0.7;
           }
         }
+
+        // flush the desired pos
+        port_JointPositionCommand.read(jnt_pos_cmd_);
+
       }
       //Only send if state is in FRI_STATE_CMD and drives are powerd
       if ((m_msr_data.intf.state == FRI_STATE_CMD) && isPowerOn()) {
