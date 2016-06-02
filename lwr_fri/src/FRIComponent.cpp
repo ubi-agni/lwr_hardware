@@ -75,6 +75,8 @@ public:
     this->ports()->addPort("JointTorque", port_JointTorque).doc("");
     this->ports()->addPort("GravityTorque", port_GravityTorque);
     this->ports()->addPort("JointPosition", port_JointPosition).doc("");
+    
+    bad_reception_count = 0;
   }
 
   ~FRIComponent(){
@@ -428,6 +430,8 @@ private:
   RTT::OutputPort<Eigen::VectorXd > port_JointPosition;
 
   int prop_fri_port;
+  
+  unsigned int bad_reception_count;
 
 
   // Start of user code userData
@@ -461,8 +465,13 @@ private:
     int n = rt_dev_recvfrom(m_socket, (void*) &m_msr_data, sizeof(m_msr_data),
         0, (sockaddr*) &m_remote_addr, &m_sock_addr_len);
     if (sizeof(tFriMsrData) != n) {
-      RTT::log(RTT::Error) << "bad packet length: " << n << ", expected: "
+      bad_reception_count++;
+      if(bad_reception_count < 10)
+      {
+        RTT::log(RTT::Error) << "bad packet length: " << n << ", expected: "
           << sizeof(tFriMsrData) << RTT::endlog();
+        
+      }
       return -1;
     }
     return 0;
