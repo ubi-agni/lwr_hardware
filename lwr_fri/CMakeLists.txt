@@ -7,7 +7,7 @@ add_message_files(DIRECTORY msg)
 generate_messages(DEPENDENCIES geometry_msgs std_msgs)
 
 catkin_package(
-  DEPENDS rtt
+  DEPENDS
   CATKIN_DEPENDS rtt_ros rtt_roscomm diagnostic_msgs geometry_msgs std_msgs message_runtime
 )
 
@@ -50,4 +50,3 @@ endif()
 ros_generate_rtt_typekit(lwr_fri)
 
 orocos_generate_package()
-
