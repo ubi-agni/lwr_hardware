@@ -1,6 +1,7 @@
 #include <rtt/TaskContext.hpp>
 #include <rtt/Port.hpp>
 #include <rtt/Component.hpp>
+#include "rtt_rosclock/rtt_rosclock.h"
 
 // Start of user code includes
 #include <kdl/frames.hpp>
@@ -13,9 +14,10 @@
 #include <lwr_fri/FriJointImpedance.h>
 #include <lwr_fri/FriKrlData.h>
 #include <geometry_msgs/Pose.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Wrench.h>
 #include <geometry_msgs/Twist.h>
-#include <std_msgs/Int32.h>
+#include <std_msgs/Int32.h> 
 
 #include <tf_conversions/tf_kdl.h>
 
@@ -136,6 +138,7 @@ private:
     // Start of user code Comm
 
     geometry_msgs::Pose cart_pos, cart_pos_cmd;
+    geometry_msgs::PoseStamped cart_pos_stamped;
     geometry_msgs::Wrench cart_wrench, cart_wrench_cmd;
     geometry_msgs::Twist cart_twist;
     Matrix77d mass;
@@ -174,6 +177,8 @@ private:
       cartPos.p.z(m_msr_data.data.msrCartPos[11]);
       cartPos = baseFrame * cartPos;
       tf::poseKDLToMsg(cartPos, cart_pos);
+      tf::poseKDLToMsg(cartPos, cart_pos_stamped.pose);
+      cart_pos_stamped.header.stamp = rtt_rosclock::host_now();
 
       KDL::Twist v = KDL::diff(T_old, cartPos, m_msr_data.intf.desiredMsrSampleTime);
       v = cartPos.M.Inverse() * v;
