@@ -72,6 +72,7 @@ public:
     this->ports()->addPort("JointVelocity", port_JointVelocity).doc("");
     this->ports()->addPort("CartesianVelocity", port_CartesianVelocity).doc("");
     this->ports()->addPort("CartesianPosition", port_CartesianPosition).doc("");
+    this->ports()->addPort("CartesianPositionStamped", port_CartesianPositionStamped).doc("");
     this->ports()->addPort("MassMatrix", port_MassMatrix).doc("");
     this->ports()->addPort("Jacobian", port_Jacobian).doc("");
     this->ports()->addPort("JointTorque", port_JointTorque).doc("");
@@ -397,6 +398,7 @@ private:
       port_GravityTorque.write(grav_trq_);
 
       port_CartesianPosition.write(cart_pos);
+      port_CartesianPositionStamped.write(cart_pos_stamped);
       port_CartesianVelocity.write(cart_twist);
       port_CartesianWrench.write(cart_wrench);
 
@@ -428,6 +430,7 @@ private:
   RTT::OutputPort<Eigen::VectorXd > port_JointVelocity;
   RTT::OutputPort<geometry_msgs::Twist > port_CartesianVelocity;
   RTT::OutputPort<geometry_msgs::Pose > port_CartesianPosition;
+  RTT::OutputPort<geometry_msgs::PoseStamped > port_CartesianPositionStamped;
   RTT::OutputPort<Matrix77d > port_MassMatrix;
   RTT::OutputPort<KDL::Jacobian > port_Jacobian;
   RTT::OutputPort<Eigen::VectorXd > port_JointTorque;
