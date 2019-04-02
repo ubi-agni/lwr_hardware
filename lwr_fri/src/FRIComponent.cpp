@@ -175,12 +175,10 @@ private:
     //Read:
     //start clock
            
-    clock_gettime (CLOCK_REALTIME,&start_time);
+    
     if (fri_recv() == 0) {
-      clock_gettime (CLOCK_REALTIME,&stop_time);
-      nanosecs_passed = calc_time (start_time,stop_time);
-      nsecs_total += nanosecs_passed; 
-
+      clock_gettime (CLOCK_REALTIME,&start_time);
+      
       /*KDL::Frame baseFrame(
           KDL::Rotation::RPY(m_msr_data.krl.realData[3] * M_PI / 180.0,
               m_msr_data.krl.realData[4] * M_PI / 180.0,
@@ -434,10 +432,12 @@ private:
         */
       //port_FromKRL.write(m_fromKRL);
       
-      
+      usleep(6200);
       //stop the clock
       fri_send();
-     
+      clock_gettime (CLOCK_REALTIME,&stop_time);
+      nanosecs_passed = calc_time (start_time,stop_time);
+      nsecs_total += nanosecs_passed; 
       
     }
 
