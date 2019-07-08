@@ -54,8 +54,10 @@ public:
   FRIComponent(const std::string & name) : TaskContext(name) {
 
     prop_fri_port = 49938;
-	
+    prop_fake_fri = false;
+
     this->addProperty("fri_port", prop_fri_port);
+    this->addProperty("fake_fri", prop_fake_fri);
 
     this->ports()->addPort("CartesianImpedanceCommand", port_CartesianImpedanceCommand).doc("");
     this->ports()->addPort("CartesianWrenchCommand", port_CartesianWrenchCommand).doc("");
@@ -78,7 +80,7 @@ public:
     this->ports()->addPort("JointTorque", port_JointTorque).doc("");
     this->ports()->addPort("GravityTorque", port_GravityTorque);
     this->ports()->addPort("JointPosition", port_JointPosition).doc("");
-    
+
     bad_reception_count = 0;
   }
 
@@ -102,8 +104,11 @@ public:
     port_GravityTorque.setDataSample(grav_trq_);
     port_Jacobian.setDataSample(jac_);
 
-    if (fri_create_socket() != 0)
-      return false;
+    if (!prop_fake_fri)
+    {
+      if (fri_create_socket() != 0)
+        return false;
+    }
     // End of user code
     std::cout << "FRI configured !" <<std::endl;
     return true;
@@ -123,13 +128,19 @@ public:
 
   void updateHook() {
     if( this->isRunning() ) {
-      doComm();
+      if (prop_fake_fri)
+        doFake();
+      else
+        doComm();
     }
   }
-  
+
   void cleanupHook() {
-    std::cout << "FRI closing socket !" <<std::endl;
-    close(m_socket);
+    if (!prop_fake_fri)
+    {
+      std::cout << "FRI closing socket !" <<std::endl;
+      close(m_socket);
+    }
     std::cout << "FRI cleaned up !" <<std::endl;
   }
 
@@ -413,6 +424,199 @@ private:
     this->trigger();
     // End of user code
   }
+  
+  void doFake() {
+    // Start of user code Fake
+
+    geometry_msgs::Pose cart_pos, cart_pos_cmd;
+    geometry_msgs::PoseStamped cart_pos_stamped;
+    geometry_msgs::Wrench cart_wrench, cart_wrench_cmd;
+    geometry_msgs::Twist cart_twist;
+    Matrix77d mass;
+    lwr_fri::FriJointImpedance jnt_imp_cmd;
+    lwr_fri::CartesianImpedance cart_imp_cmd;
+
+    //Fake Read:
+    {
+      // use previous command as read values
+      KDL::Frame baseFrame(KDL::Rotation::RPY(0.0, 0.0, 0.0), KDL::Vector(0.0, 0.0, 0.0));
+
+      // Fill in fri_joint_state and joint_state
+      for (unsigned int i = 0; i < LBR_MNJ; i++) {
+        grav_trq_[i] = 0.0;
+        jnt_trq_[i] = 0.0;
+        jnt_pos_[i] = m_cmd_data.cmd.jntPos[i];
+        jnt_vel_[i] = (jnt_pos_[i] - jnt_pos_old_[i]) / 1000.0;
+        jnt_pos_old_[i] = jnt_pos_[i];
+      }
+
+      geometry_msgs::Quaternion quat;
+      KDL::Frame cartPos;
+      cartPos.M = KDL::Rotation(m_cmd_data.cmd.cartPos[0],
+          m_cmd_data.cmd.cartPos[1], m_cmd_data.cmd.cartPos[2],
+          m_cmd_data.cmd.cartPos[4], m_cmd_data.cmd.cartPos[5],
+          m_cmd_data.cmd.cartPos[6], m_cmd_data.cmd.cartPos[8],
+          m_cmd_data.cmd.cartPos[9], m_cmd_data.cmd.cartPos[10]);
+      cartPos.p.x(m_cmd_data.cmd.cartPos[3]);
+      cartPos.p.y(m_cmd_data.cmd.cartPos[7]);
+      cartPos.p.z(m_cmd_data.cmd.cartPos[11]);
+      cartPos = baseFrame * cartPos;
+      tf::poseKDLToMsg(cartPos, cart_pos);
+      tf::poseKDLToMsg(cartPos, cart_pos_stamped.pose);
+      cart_pos_stamped.header.stamp = rtt_rosclock::host_now();
+
+      KDL::Twist v = KDL::diff(T_old, cartPos, 1000.0);
+      v = cartPos.M.Inverse() * v;
+      T_old = cartPos;
+      tf::twistKDLToMsg(v, cart_twist);
+
+      cart_wrench.force.x = m_cmd_data.cmd.addTcpFT[0];
+      cart_wrench.force.y = m_cmd_data.cmd.addTcpFT[1];
+      cart_wrench.force.z = m_cmd_data.cmd.addTcpFT[2];
+      cart_wrench.torque.x = m_cmd_data.cmd.addTcpFT[5];
+      cart_wrench.torque.y = m_cmd_data.cmd.addTcpFT[4];
+      cart_wrench.torque.z = m_cmd_data.cmd.addTcpFT[3];
+
+      for (int i = 0; i < FRI_CART_VEC; i++)
+        for (int j = 0; j < LBR_MNJ; j++)
+          jac_(i, j) = 0.0;
+      //Kuka uses Tx, Ty, Tz, Rz, Ry, Rx convention, so we need to swap Rz and Rx
+      jac_.data.row(3).swap(jac_.data.row(5));
+
+      for (unsigned int i = 0; i < LBR_MNJ; i++) {
+        for (unsigned int j = 0; j < LBR_MNJ; j++) {
+          mass(i, j) = 0.0;
+        }
+      }
+
+      //Fill in datagram to send:
+      m_cmd_data.head.datagramId = FRI_DATAGRAM_ID_CMD;
+      m_cmd_data.head.packetSize = sizeof(tFriCmdData);
+      m_cmd_data.head.sendSeqCount = ++counter;
+      m_cmd_data.head.reflSeqCount = m_cmd_data.head.sendSeqCount;
+
+      // process outgoing krl datagrams to the user
+      for(unsigned int i=0 ; i < FRI_USER_SIZE ; ++i)
+      {
+        m_fromKRL.intData[i] = 0;
+        m_fromKRL.realData[i] = 0.0;
+      }
+      m_fromKRL.boolData = m_cmd_data.krl.boolData;
+      
+      // process incoming krl datagrams from the user
+      // if no command flag
+      if (!(m_msr_data.krl.boolData & (1 << 0))) {
+        if (port_ToKRL.read(m_toKRL) == RTT::NewData) {
+          for(unsigned int i=0 ; i < FRI_USER_SIZE ; ++i)
+          {
+            m_cmd_data.krl.intData[i] = m_toKRL.intData[i];
+            m_cmd_data.krl.realData[i] = m_toKRL.realData[i];
+          }
+          // set command flag
+          m_cmd_data.krl.boolData |= (1 << 0);
+        }
+      } else {
+        // reset command flag
+        m_cmd_data.krl.boolData &= ~(1 << 0);
+      }
+      //for(unsigned i = 0;i< FRI_USER_SIZE ; ++i)
+      //    RTT::log(RTT::Debug) << " "<<i<<" : "<<m_cmd_data.krl.intData[i];
+      //RTT::log(RTT::Debug) << RTT::endlog();
+      if (!isPowerOn()) {
+        // necessary to write cmd if not powered on. See kuka FRI user manual p6 and friremote.cpp:
+        for (int i = 0; i < LBR_MNJ; i++) {
+          m_cmd_data.cmd.jntPos[i] = jnt_pos_[i];
+        }
+      }
+
+      //Only send if state is in FRI_STATE_CMD and drives are powered
+      if (true && isPowerOn()) {
+        //Valid ports in joint position and joint impedance mode
+        {
+          //Read desired positions
+          if (port_JointPositionCommand.read(jnt_pos_cmd_) == RTT::NewData) {
+            if (jnt_pos_cmd_.size() == LBR_MNJ) {
+              for (unsigned int i = 0; i < LBR_MNJ; i++)
+                m_cmd_data.cmd.jntPos[i] = jnt_pos_cmd_[i];
+            } else
+              RTT::log(RTT::Warning) << "Size of " << port_JointPositionCommand.getName()
+                  << " not equal to " << LBR_MNJ << RTT::endlog();
+
+          }
+        }
+        // Also copy cartesian input to cartesian command
+        {
+          if (port_CartesianPositionCommand.read(cart_pos_cmd) == RTT::NewData) {
+            KDL::Rotation rot = KDL::Rotation::Quaternion(
+                cart_pos_cmd.orientation.x, cart_pos_cmd.orientation.y,
+                cart_pos_cmd.orientation.z, cart_pos_cmd.orientation.w);
+            m_cmd_data.cmd.cartPos[0] = rot.data[0];
+            m_cmd_data.cmd.cartPos[1] = rot.data[1];
+            m_cmd_data.cmd.cartPos[2] = rot.data[2];
+            m_cmd_data.cmd.cartPos[4] = rot.data[3];
+            m_cmd_data.cmd.cartPos[5] = rot.data[4];
+            m_cmd_data.cmd.cartPos[6] = rot.data[5];
+            m_cmd_data.cmd.cartPos[8] = rot.data[6];
+            m_cmd_data.cmd.cartPos[9] = rot.data[7];
+            m_cmd_data.cmd.cartPos[10] = rot.data[8];
+
+            m_cmd_data.cmd.cartPos[3] = cart_pos_cmd.position.x;
+            m_cmd_data.cmd.cartPos[7] = cart_pos_cmd.position.y;
+            m_cmd_data.cmd.cartPos[11] = cart_pos_cmd.position.z;
+          }
+
+          if (port_CartesianWrenchCommand.read(cart_wrench_cmd) == RTT::NewData) {
+            m_cmd_data.cmd.addTcpFT[0] = cart_wrench_cmd.force.x;
+            m_cmd_data.cmd.addTcpFT[1] = cart_wrench_cmd.force.y;
+            m_cmd_data.cmd.addTcpFT[2] = cart_wrench_cmd.force.z;
+            m_cmd_data.cmd.addTcpFT[3] = cart_wrench_cmd.torque.z;
+            m_cmd_data.cmd.addTcpFT[4] = cart_wrench_cmd.torque.y;
+            m_cmd_data.cmd.addTcpFT[5] = cart_wrench_cmd.torque.x;
+          }
+
+          if (port_CartesianImpedanceCommand.read(cart_imp_cmd) == RTT::NewData) {
+            m_cmd_data.cmd.cartStiffness[0] = cart_imp_cmd.stiffness.linear.x;
+            m_cmd_data.cmd.cartStiffness[1] = cart_imp_cmd.stiffness.linear.y;
+            m_cmd_data.cmd.cartStiffness[2] = cart_imp_cmd.stiffness.linear.z;
+            m_cmd_data.cmd.cartStiffness[5] = cart_imp_cmd.stiffness.angular.x;
+            m_cmd_data.cmd.cartStiffness[4] = cart_imp_cmd.stiffness.angular.y;
+            m_cmd_data.cmd.cartStiffness[3] = cart_imp_cmd.stiffness.angular.z;
+            m_cmd_data.cmd.cartDamping[0] = cart_imp_cmd.damping.linear.x;
+            m_cmd_data.cmd.cartDamping[1] = cart_imp_cmd.damping.linear.y;
+            m_cmd_data.cmd.cartDamping[2] = cart_imp_cmd.damping.linear.z;
+            m_cmd_data.cmd.cartDamping[5] = cart_imp_cmd.damping.angular.x;
+            m_cmd_data.cmd.cartDamping[4] = cart_imp_cmd.damping.angular.y;
+            m_cmd_data.cmd.cartDamping[3] = cart_imp_cmd.damping.angular.z;
+          }
+        }
+      }						//End command mode
+
+      //Put robot and fri state on the ports(no parsing)
+      port_RobotState.write(m_msr_data.robot);
+      port_FRIState.write(m_msr_data.intf);
+
+      port_JointPosition.write(jnt_pos_);
+      port_JointVelocity.write(jnt_vel_);
+      port_JointTorque.write(jnt_trq_);
+      port_GravityTorque.write(grav_trq_);
+
+      port_CartesianPosition.write(cart_pos);
+      port_CartesianPositionStamped.write(cart_pos_stamped);
+      port_CartesianVelocity.write(cart_twist);
+      port_CartesianWrench.write(cart_wrench);
+
+      port_Jacobian.write(jac_);
+      port_MassMatrix.write(mass);
+        
+      port_FromKRL.write(m_fromKRL);
+    }
+
+    this->trigger();
+    // End of user code
+  }
+  
+  
+  
 
 
   RTT::InputPort<lwr_fri::CartesianImpedance > port_CartesianImpedanceCommand;
@@ -438,6 +642,7 @@ private:
   RTT::OutputPort<Eigen::VectorXd > port_JointPosition;
 
   int prop_fri_port;
+  bool prop_fake_fri;
   
   unsigned int bad_reception_count;
 
@@ -496,7 +701,7 @@ private:
     return 0;
   }
 
-  bool isPowerOn() { return m_msr_data.robot.power!=0; }
+  bool isPowerOn() { if(prop_fake_fri) return true; else return m_msr_data.robot.power!=0; }
 
   int fri_create_socket() {
     int so_reuseaddr = 1;
