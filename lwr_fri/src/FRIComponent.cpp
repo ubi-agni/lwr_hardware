@@ -529,6 +529,8 @@ private:
         }
       }
 
+      // set it to command mode
+      m_msr_data.intf.state = FRI_STATE_CMD;
       //Only send if state is in FRI_STATE_CMD and drives are powered
       if (true && isPowerOn()) {
         //Valid ports in joint position and joint impedance mode
@@ -610,7 +612,8 @@ private:
         
       port_FromKRL.write(m_fromKRL);
     }
-
+    // TODO wait 1 ms cleanly
+    usleep(1000);
     this->trigger();
     // End of user code
   }
