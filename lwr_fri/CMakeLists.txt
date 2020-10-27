@@ -4,6 +4,8 @@ project(lwr_fri)
 find_package(catkin REQUIRED COMPONENTS rtt_ros rtt_roscomm kuka_lwr_fri diagnostic_msgs geometry_msgs std_msgs message_generation kdl_conversions )
 
 add_message_files(DIRECTORY msg)
+add_service_files(DIRECTORY srv)
+
 generate_messages(DEPENDENCIES geometry_msgs std_msgs)
 
 catkin_package(
