@@ -55,9 +55,11 @@ public:
 
     prop_fri_port = 49938;
     prop_fake_fri = false;
+    prop_fake_timestep = 0.001;
 
     this->addProperty("fri_port", prop_fri_port);
     this->addProperty("fake_fri", prop_fake_fri);
+    this->addProperty("fake_timestep", prop_fake_timestep);
 
     this->ports()->addPort("CartesianImpedanceCommand", port_CartesianImpedanceCommand).doc("");
     this->ports()->addPort("CartesianWrenchCommand", port_CartesianWrenchCommand).doc("");
@@ -106,9 +108,11 @@ public:
 
     if (!prop_fake_fri)
     {
+      prop_fake_timestep = 0.0;
       if (fri_create_socket() != 0)
         return false;
     }
+
     // End of user code
     std::cout << "FRI configured !" <<std::endl;
     return true;
@@ -613,7 +617,7 @@ private:
       port_FromKRL.write(m_fromKRL);
     }
     // TODO wait 1 ms cleanly
-    usleep(1000);
+    usleep(prop_fake_timestep * 1e6);
     this->trigger();
     // End of user code
   }
@@ -646,6 +650,7 @@ private:
 
   int prop_fri_port;
   bool prop_fake_fri;
+  double prop_fake_timestep;
   
   unsigned int bad_reception_count;
 
