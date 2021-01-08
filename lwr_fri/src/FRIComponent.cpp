@@ -450,7 +450,7 @@ private:
         grav_trq_[i] = 0.0;
         jnt_trq_[i] = 0.0;
         jnt_pos_[i] = m_cmd_data.cmd.jntPos[i];
-        jnt_vel_[i] = (jnt_pos_[i] - jnt_pos_old_[i]) / 1000.0;
+        jnt_vel_[i] = (jnt_pos_[i] - jnt_pos_old_[i]) / prop_fake_timestep;
         jnt_pos_old_[i] = jnt_pos_[i];
       }
 
@@ -469,7 +469,7 @@ private:
       tf::poseKDLToMsg(cartPos, cart_pos_stamped.pose);
       cart_pos_stamped.header.stamp = rtt_rosclock::host_now();
 
-      KDL::Twist v = KDL::diff(T_old, cartPos, 1000.0);
+      KDL::Twist v = KDL::diff(T_old, cartPos, prop_fake_timestep);
       v = cartPos.M.Inverse() * v;
       T_old = cartPos;
       tf::twistKDLToMsg(v, cart_twist);
